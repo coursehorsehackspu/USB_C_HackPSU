@@ -1,0 +1,15 @@
+{
+  "Computer Science": {
+    "required_courses": ["CMPSC121", "CMPSC122", "CMPSC221", "CMPSC311", "CMPSC360"],
+    "prerequisites": {
+      "CMPSC122": ["CMPSC121"],
+      "CMPSC221": ["CMPSC122"],
+      "CMPSC311": ["CMPSC122"],
+      "CMPSC360": ["CMPSC121"]
+    },
+    "total_credits_required": 120,
+    "major_credits_required": 48,
+    "min_credits_per_semester": 12,
+    "max_credits_per_semester": 18
+  }
+}

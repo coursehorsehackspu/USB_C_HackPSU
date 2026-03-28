@@ -1,0 +1,72 @@
+[
+  {
+    "code": "CMPSC121",
+    "title": "Introduction to Programming",
+    "credits": 3,
+    "department": "Computer Science",
+    "difficulty_level": "intro",
+    "avg_workload_hours": 8.0,
+    "has_lab": true,
+    "has_project": false
+  },
+  {
+    "code": "CMPSC122",
+    "title": "Intermediate Programming",
+    "credits": 3,
+    "department": "Computer Science",
+    "difficulty_level": "intro",
+    "avg_workload_hours": 9.0,
+    "has_lab": true,
+    "has_project": true
+  },
+  {
+    "code": "CMPSC221",
+    "title": "Object Oriented Programming",
+    "credits": 3,
+    "department": "Computer Science",
+    "difficulty_level": "intermediate",
+    "avg_workload_hours": 10.0,
+    "has_lab": false,
+    "has_project": true
+  },
+  {
+    "code": "CMPSC311",
+    "title": "Systems Programming",
+    "credits": 3,
+    "department": "Computer Science",
+    "difficulty_level": "intermediate",
+    "avg_workload_hours": 12.0,
+    "has_lab": true,
+    "has_project": true
+  },
+  {
+    "code": "CMPSC360",
+    "title": "Discrete Mathematics",
+    "credits": 3,
+    "department": "Computer Science",
+    "difficulty_level": "intermediate",
+    "avg_workload_hours": 11.0,
+    "has_lab": false,
+    "has_project": false
+  },
+  {
+    "code": "MATH230",
+    "title": "Calculus III",
+    "credits": 4,
+    "department": "Mathematics",
+    "difficulty_level": "intermediate",
+    "avg_workload_hours": 10.0,
+    "has_lab": false,
+    "has_project": false
+  },
+  {
+    "code": "DS220",
+    "title": "Data Science Fundamentals",
+    "credits": 3,
+    "department": "Data Science",
+    "difficulty_level": "intro",
+    "avg_workload_hours": 7.0,
+    "has_lab": true,
+    "has_project": false
+  }
+]
