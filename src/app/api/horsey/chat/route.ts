@@ -581,7 +581,7 @@ ${history ? `CONVERSATION:\n${history}\n` : ""}Student: ${lastUser.content}
 Horsey:`;
 
     const genai = new GoogleGenerativeAI(GEMINI_KEY);
-    const model = genai.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
     const result = await model.generateContent(prompt);
     const raw = result.response.text();
 
