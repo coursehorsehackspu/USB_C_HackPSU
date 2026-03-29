@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -22,23 +21,8 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { layoutWithDagre } from "@/lib/graph-layout";
-import type { CourseGraphPayload, CourseGraphNode } from "@/types/graph";
+import type { CourseGraphNode } from "@/types/graph";
 import { useUiStore } from "@/stores/ui-store";
-
-async function fetchGraph(): Promise<CourseGraphPayload> {
-  const stored = localStorage.getItem("coursehorse.onboarding.v1");
-  const onboarding = stored
-    ? (JSON.parse(stored) as { major?: string; completedCourseIds?: string[] })
-    : {};
- 
-  const subject = onboarding.major?.toUpperCase() || "CMPSC";
-  const completed = (onboarding.completedCourseIds || []).join(",");
- 
-  const res = await fetch(`/api/graph?subject=${subject}&completed=${completed}`);
-  if (!res.ok) throw new Error("Could not load graph");
-  return res.json();
-}
-
 
 const statusClass: Record<CourseGraphNode["status"], string> = {
   completed: "border-emerald-500 bg-emerald-50 text-emerald-950",
@@ -65,14 +49,27 @@ function CourseNode({ data, selected }: NodeProps) {
 
 const nodeTypes = { course: CourseNode };
 
-function FitViewOnFocus({
+function FitViewOnChange({
   focusId,
   nodeIds,
+  payloadKey,
 }: {
   focusId: string | null;
   nodeIds: string[];
+  payloadKey: string;
 }) {
   const { fitView } = useReactFlow();
+  const prevKey = useRef(payloadKey);
+
+  useEffect(() => {
+    if (prevKey.current !== payloadKey) {
+      prevKey.current = payloadKey;
+      const id = window.requestAnimationFrame(() => {
+        fitView({ duration: 350, padding: 0.15 });
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
+  }, [payloadKey, fitView]);
 
   useEffect(() => {
     if (!focusId || !nodeIds.includes(focusId)) return;
@@ -112,7 +109,7 @@ function SearchPanel({
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="e.g. CS 201"
+        placeholder="e.g. CMPSC 132"
         className="w-full rounded-lg border border-stone-200 px-2 py-1.5 text-xs text-stone-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
       />
       {q.trim() ? (
@@ -143,11 +140,33 @@ function SearchPanel({
   );
 }
 
+function EmptyGraphState() {
+  const setHorseyOpen = useUiStore((s) => s.setHorseyOpen);
+
+  return (
+    <div className="flex h-[min(70vh,640px)] w-full flex-col items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50/50">
+      <svg viewBox="0 0 24 24" fill="none" className="h-12 w-12 text-stone-300" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><circle cx="12" cy="18" r="3" />
+        <path d="M8.5 7.5 10.5 16M15.5 7.5 13.5 16" />
+      </svg>
+      <h3 className="mt-4 text-sm font-semibold text-stone-700">No prerequisite graph yet</h3>
+      <p className="mt-1 max-w-xs text-center text-xs leading-relaxed text-stone-500">
+        Ask Horsey to build a prerequisite graph for any course or department and it will appear here.
+      </p>
+      <button
+        type="button"
+        onClick={() => setHorseyOpen(true)}
+        className="mt-4 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-amber-950 shadow-sm hover:bg-amber-400"
+      >
+        Ask Horsey
+      </button>
+    </div>
+  );
+}
+
 function GraphInner({ focusId }: { focusId: string | null }) {
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["graph"],
-    queryFn: fetchGraph,
-  });
+  const graphPayload = useUiStore((s) => s.graphPayload);
+  const clearGraphPayload = useUiStore((s) => s.clearGraphPayload);
 
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -156,10 +175,14 @@ function GraphInner({ focusId }: { focusId: string | null }) {
   const setHorseyContext = useUiStore((s) => s.setHorseyContext);
   const setHorseyOpen = useUiStore((s) => s.setHorseyOpen);
 
-  const payload = data;
+  const payload = graphPayload;
 
   useEffect(() => {
-    if (!payload) return;
+    if (!payload) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
     const n: Node[] = payload.nodes.map((node) => ({
       id: node.id,
       type: "course",
@@ -246,32 +269,11 @@ function GraphInner({ focusId }: { focusId: string | null }) {
     setHorseyContext({ selectedCourse: undefined });
   }, [setHorseyContext]);
 
-  if (isLoading) {
-    return (
-      <div
-        className="h-[min(70vh,640px)] animate-pulse rounded-xl bg-stone-100"
-        aria-busy
-      />
-    );
-  }
-
-  if (isError || !payload) {
-    return (
-      <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">
-        Could not load graph.{" "}
-        <button
-          type="button"
-          className="underline"
-          onClick={() => void refetch()}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+  if (!payload) return <EmptyGraphState />;
 
   const selected = payload.nodes.find((n) => n.id === selectedId);
   const nodeIds = payload.nodes.map((n) => n.id);
+  const payloadKey = payload.nodes.map((n) => n.id).sort().join(",");
 
   return (
     <div className="relative h-[min(70vh,640px)] w-full rounded-xl border border-stone-200 bg-stone-50">
@@ -290,7 +292,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
         maxZoom={1.6}
         proOptions={{ hideAttribution: true }}
       >
-        <FitViewOnFocus focusId={focusId} nodeIds={nodeIds} />
+        <FitViewOnChange focusId={focusId} nodeIds={nodeIds} payloadKey={payloadKey} />
         <Background gap={20} size={1} color="#e7e5e4" />
         <Controls showInteractive={false} />
         <MiniMap
@@ -311,6 +313,21 @@ function GraphInner({ focusId }: { focusId: string | null }) {
             setHorseyContext({ selectedCourse: { id: c.id, code: c.code }, view: "graph" });
           }}
         />
+        <Panel
+          position="top-right"
+          className="m-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 shadow-sm ring-1 ring-amber-200 backdrop-blur"
+        >
+          <span className="text-xs font-medium text-amber-800">
+            Horsey&apos;s graph
+          </span>
+          <button
+            type="button"
+            onClick={clearGraphPayload}
+            className="rounded-md bg-amber-200 px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-300"
+          >
+            Clear
+          </button>
+        </Panel>
       </ReactFlow>
 
       {selected ? (

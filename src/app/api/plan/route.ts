@@ -2,6 +2,21 @@
 import { NextResponse } from "next/server";
 import { MongoClient } from "mongodb";
 import type { DegreePlan, SemesterPlan, PlanCourse } from "@/types/plan";
+import {
+  dropSupersededAlternatives,
+  expandSubjectsForPlan,
+  filterCsAutoplanExcludedCourses,
+  isBlockedByRequirementAlternatives,
+  normalizeCourseCode,
+  normalizedPrereqs,
+  planUsesCsRules,
+  sortCoursesForSemester,
+  type CourseDoc,
+} from "@/lib/schedule-plan";
+import {
+  getCsEngineeringSuggestedPlan,
+  shouldUseCsBulletinTemplate,
+} from "@/data/cs-bulletin-suggested-plan";
 
 const MONGO_URI = process.env.MONGO_URI!;
 let client: MongoClient | null = null;
@@ -16,77 +31,124 @@ const SEMESTER_LABELS = [
   "Fall 2029", "Spring 2030", "Fall 2030", "Spring 2031",
 ];
 
-function buildPlan(
-  courses: Record<string, unknown>[],
-  completedIds: string[],
+function semesterSeason(label: string): "fall" | "spring" {
+  return label.startsWith("Fall") ? "fall" : "spring";
+}
+
+function courseOfferedIn(doc: CourseDoc, season: "fall" | "spring"): boolean {
+  const offered = doc.semesters_offered as string[] | undefined;
+  if (!offered || offered.length === 0) return true;
+  const normalised = offered.map((s) => s.toLowerCase());
+  if (season === "fall") {
+    return normalised.some((s) => s.includes("fall") || s.includes("autumn"));
+  }
+  return normalised.some((s) => s.includes("spring"));
+}
+
+export function buildPlan(
+  courses: CourseDoc[],
+  completedCodes: string[],
   maxCredits: number,
-  variant: string
+  variant: string,
+  primarySubjects: string[],
 ): DegreePlan {
-  const completedSet = new Set(completedIds);
-  const codeToId = new Map<string, string>();
-  courses.forEach((c) =>
-    codeToId.set(c.course_code as string, (c.course_code as string).replace(/\s+/g, "-").toLowerCase())
+  const completedSet = new Set(completedCodes.map(normalizeCourseCode));
+  const codeToId = (code: string) => code.replace(/\s+/g, "-").toLowerCase();
+
+  let remaining = courses.filter(
+    (c) => !completedSet.has(normalizeCourseCode(c.course_code as string)),
   );
 
-  // Filter out already completed
-  let remaining = courses.filter((c) => !completedSet.has(c.course_code as string));
-
-  // Experimental: shuffle slightly for variety
   if (variant === "experimental") {
     remaining = [...remaining].sort(() => Math.random() - 0.49);
   }
 
   const semesters: SemesterPlan[] = [];
-  const scheduled = new Set(completedIds);
+  const scheduled = new Set(completedCodes.map(normalizeCourseCode));
+  const primaryHasCs = planUsesCsRules(primarySubjects);
+  remaining = dropSupersededAlternatives(remaining, scheduled, primaryHasCs);
   let semIdx = 0;
+  let stallCount = 0;
 
-  while (remaining.length > 0 && semIdx < 12) {
-    // Find courses whose prereqs are all scheduled
-    const available = remaining.filter((c) => {
-      const prereqs = (c.prerequisites as string[]) || [];
-      return prereqs.every((p) => scheduled.has(p));
-    });
+  while (remaining.length > 0 && semIdx < SEMESTER_LABELS.length) {
+    const season = semesterSeason(SEMESTER_LABELS[semIdx]);
 
-    if (!available.length) break;
+    const available = sortCoursesForSemester(
+      remaining.filter((c) => {
+        const prereqs = normalizedPrereqs(c);
+        const prereqsMet = prereqs.every((p) => scheduled.has(p));
+        const offeredNow = courseOfferedIn(c, season);
+        return prereqsMet && offeredNow;
+      }),
+      primarySubjects,
+    );
+
+    if (!available.length) {
+      stallCount++;
+      if (stallCount > 2) break;
+      semIdx++;
+      continue;
+    }
+    stallCount = 0;
 
     let credits = 0;
     const semCourses: PlanCourse[] = [];
     const toRemove: string[] = [];
 
     for (const course of available) {
+      const codeNorm = normalizeCourseCode(course.course_code as string);
+      if (isBlockedByRequirementAlternatives(codeNorm, scheduled, primaryHasCs)) continue;
+
       const cr = (course.credits as number) || 3;
       if (credits + cr <= maxCredits) {
-        const id = codeToId.get(course.course_code as string)!;
+        const id = codeToId(codeNorm);
         semCourses.push({
           id,
-          code: course.course_code as string,
+          code: codeNorm,
           title: (course.title as string) || "",
           credits: cr,
         });
         credits += cr;
-        scheduled.add(course.course_code as string);
-        toRemove.push(course.course_code as string);
+        scheduled.add(codeNorm);
+        toRemove.push(codeNorm);
       }
       if (credits >= maxCredits) break;
     }
 
-    if (!semCourses.length) break;
+    if (!semCourses.length) {
+      semIdx++;
+      continue;
+    }
 
-    // Remove scheduled from remaining
-    const toRemoveSet = new Set(toRemove);
-    remaining = remaining.filter((c) => !toRemoveSet.has(c.course_code as string));
+    const removeSet = new Set(toRemove);
+    remaining = remaining.filter((c) => !removeSet.has(normalizeCourseCode(c.course_code as string)));
+    remaining = dropSupersededAlternatives(remaining, scheduled, primaryHasCs);
+
+    const warnings: { code: string; message: string }[] = [];
+    if (credits > 18) {
+      warnings.push({ code: "heavy-load", message: `Heavy load: ${credits} credits this semester.` });
+    }
 
     semesters.push({
       id: `sem-${semIdx + 1}`,
-      label: SEMESTER_LABELS[semIdx] ?? `Semester ${semIdx + 1}`,
+      label: SEMESTER_LABELS[semIdx],
       courses: semCourses,
       creditsTotal: credits,
-      warnings: credits > 18
-        ? [{ code: "heavy-load", message: `Heavy load: ${credits} credits this semester.` }]
-        : [],
+      warnings,
     });
 
     semIdx++;
+  }
+
+  if (remaining.length > 0) {
+    const unscheduled = remaining.map((c) => c.course_code as string);
+    const lastSem = semesters[semesters.length - 1];
+    if (lastSem) {
+      lastSem.warnings.push({
+        code: "unscheduled",
+        message: `${unscheduled.length} course(s) could not be scheduled: ${unscheduled.slice(0, 5).join(", ")}${unscheduled.length > 5 ? "…" : ""}`,
+      });
+    }
   }
 
   return { semesters };
@@ -96,24 +158,35 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const variant = searchParams.get("variant") || "saved";
-
-    // Read student onboarding from cookie or default to CMPSC
     const subjectHeader = searchParams.get("subject") || "CMPSC";
     const subject = subjectHeader.toUpperCase();
-    const completedIds = (searchParams.get("completed") || "").split(",").filter(Boolean);
+    const primarySubjects = subject.split(",").map((s) => s.trim()).filter(Boolean);
+    const completedCodes = (searchParams.get("completed") || "").split(",").filter(Boolean);
     const maxCredits = parseInt(searchParams.get("maxCredits") || "18", 10);
 
+    // For the canonical \"give me a CS schedule\" case, serve the bulletin
+    // template instead of trying to infer everything from catalog data.
+    if (shouldUseCsBulletinTemplate(primarySubjects) && completedCodes.length === 0) {
+      const template = getCsEngineeringSuggestedPlan("131");
+      return NextResponse.json(template);
+    }
+
     const c = await db();
-    const courses = await c.db("degreeflow_courses").collection("courses").find(
-      { subject, level: "Undergraduate" },
-      { projection: { course_code: 1, title: 1, credits: 1, prerequisites: 1 } }
+    const subjectsExpanded = expandSubjectsForPlan(primarySubjects);
+    const coursesRaw = await c.db("degreeflow_courses").collection("courses").find(
+      { subject: { $in: subjectsExpanded }, level: "Undergraduate" },
+      { projection: { course_code: 1, title: 1, credits: 1, prerequisites: 1, semesters_offered: 1 } }
     ).toArray();
 
+    const primaryHasCs = planUsesCsRules(primarySubjects);
+    const courses = filterCsAutoplanExcludedCourses(coursesRaw as CourseDoc[], primaryHasCs);
+
     const plan = buildPlan(
-      courses as Record<string, unknown>[],
-      completedIds,
+      courses as CourseDoc[],
+      completedCodes,
       maxCredits,
-      variant
+      variant,
+      primarySubjects,
     );
 
     return NextResponse.json(plan);
@@ -122,3 +195,4 @@ export async function GET(request: Request) {
     return NextResponse.json({ semesters: [] }, { status: 500 });
   }
 }
+

@@ -21,6 +21,7 @@ type Props = {
   onSaveExperimentalAsSaved: () => void;
   onClearSavedOverride: () => void;
   onRegenerateExperimental: () => void;
+  onPrefsChanged?: () => void;
   hasSavedOverride: boolean;
   totalCredits: number;
 };
@@ -31,6 +32,7 @@ export function ScheduleOptionsPanel({
   onSaveExperimentalAsSaved,
   onClearSavedOverride,
   onRegenerateExperimental,
+  onPrefsChanged,
   hasSavedOverride,
   totalCredits,
 }: Props) {
@@ -81,7 +83,8 @@ export function ScheduleOptionsPanel({
               label="Major(s)"
               value={prefs.majors}
               onChange={(e) => persist({ ...prefs, majors: e.target.value })}
-              placeholder="e.g. Computer Science, Math"
+              onBlur={() => onPrefsChanged?.()}
+              placeholder="e.g. CMPSC, Computer Science"
             />
             <Input
               id="grad"

@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useUiStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui";
+import type { CourseGraphPayload } from "@/types/graph";
+import type { DegreePlan } from "@/types/plan";
 
 type Msg = { role: "user" | "assistant"; content: string; error?: boolean };
 
 const SUGGESTED = [
-  "Why is CS 301 in Fall 2026?",
-  "Am I on track to graduate?",
+  "Build the prereq graph for CMPSC 132",
+  "Build me a schedule for CMPSC",
   "What if I drop Calculus III?",
 ];
 
@@ -42,10 +44,13 @@ function renderMarkdown(text: string) {
 
 export function HorseyDrawer() {
   const pathname = usePathname();
+  const router = useRouter();
   const horseyOpen = useUiStore((s) => s.horseyOpen);
   const setHorseyOpen = useUiStore((s) => s.setHorseyOpen);
   const horseyContext = useUiStore((s) => s.horseyContext);
   const setHorseyContext = useUiStore((s) => s.setHorseyContext);
+  const setGraphPayload = useUiStore((s) => s.setGraphPayload);
+  const setPlanPayload = useUiStore((s) => s.setPlanPayload);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [messages, setMessages] = useState<Msg[]>([
@@ -83,20 +88,51 @@ export function HorseyDrawer() {
     setMessages(next);
     setPending(true);
     try {
+      let major: string | undefined;
+      try {
+        const onb = localStorage.getItem("coursehorse.onboarding.v1");
+        if (onb) major = (JSON.parse(onb) as { major?: string }).major?.toUpperCase();
+        if (!major) {
+          const prefs = localStorage.getItem("coursehorse.schedulePrefs");
+          if (prefs) major = (JSON.parse(prefs) as { majors?: string }).majors?.toUpperCase();
+        }
+      } catch { /* ignore */ }
+
       const res = await fetch("/api/horsey/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, context: horseyContext }),
+        body: JSON.stringify({ messages: next, context: { ...horseyContext, major } }),
       });
       if (!res.ok) throw new Error("Network error");
-      const data = (await res.json()) as { content?: string };
-      setMessages((m) => [...m, { role: "assistant", content: data.content ?? "No reply." }]);
+      const data = (await res.json()) as {
+        content?: string;
+        graphAction?: CourseGraphPayload;
+        planAction?: DegreePlan;
+      };
+
+      const replyContent = data.content ?? "No reply.";
+      const hasGraph = data.graphAction && data.graphAction.nodes.length > 0;
+      const hasPlan = data.planAction && data.planAction.semesters.length > 0;
+
+      if (hasGraph) {
+        setGraphPayload(data.graphAction!);
+        const suffix = "\n\n*Prerequisite graph built — opening the map now.*";
+        setMessages((m) => [...m, { role: "assistant", content: replyContent + suffix }]);
+        setTimeout(() => { router.push("/app/graph"); setHorseyOpen(false); }, 600);
+      } else if (hasPlan) {
+        setPlanPayload(data.planAction!);
+        const suffix = "\n\n*Schedule built — opening your plan now.*";
+        setMessages((m) => [...m, { role: "assistant", content: replyContent + suffix }]);
+        setTimeout(() => { router.push("/app/plan"); setHorseyOpen(false); }, 600);
+      } else {
+        setMessages((m) => [...m, { role: "assistant", content: replyContent }]);
+      }
     } catch {
       setMessages((m) => [...m, { role: "assistant", content: "Something went wrong. Try again.", error: true }]);
     } finally {
       setPending(false);
     }
-  }, [input, pending, messages, horseyContext]);
+  }, [input, pending, messages, horseyContext, setGraphPayload, setPlanPayload, router, setHorseyOpen]);
 
   function clearHistory() {
     setMessages([{
