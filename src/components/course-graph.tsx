@@ -160,7 +160,7 @@ function EmptyGraphState() {
       <button
         type="button"
         onClick={() => setHorseyOpen(true)}
-        className="mt-4 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-amber-950 shadow-sm hover:bg-amber-400"
+        className="mt-4 rounded-lg bg-yellow-400 px-5 py-2 text-sm font-bold text-yellow-950 shadow-[0_0_0_2px_rgba(253,224,71,0.45),0_8px_20px_rgba(202,138,4,0.25)] hover:bg-yellow-300"
       >
         Ask Horsey
       </button>
@@ -389,7 +389,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 hover:bg-amber-100"
+                className="rounded-lg bg-yellow-400 px-3 py-2 text-sm font-bold text-yellow-950 shadow-[0_0_0_2px_rgba(253,224,71,0.45),0_6px_12px_rgba(202,138,4,0.2)] hover:bg-yellow-300"
                 onClick={() => setHorseyOpen(true)}
               >
                 Ask Horsey About

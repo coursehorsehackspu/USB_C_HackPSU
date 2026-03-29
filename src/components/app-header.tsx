@@ -14,14 +14,6 @@ const nav = [
   { href: "/app/settings", label: "Settings" },
 ];
 
-function HorseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-amber-600" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 4c-1 0-2.5.8-3 2l-1.5 3H9.5L8 7C7.2 5.5 5.5 4 4 4c0 0-.5 2 .5 4S7 12 7 12v6a2 2 0 0 0 2 2h1m4-8v6a2 2 0 0 1-2 2h-1m4-8h2c1.5 0 3-.5 3.5-2S21 6 21 4c-1 0-2.5.5-4 0z" />
-    </svg>
-  );
-}
-
 function MenuIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
@@ -53,7 +45,6 @@ export function AppHeader() {
       <header className="mx-auto max-w-7xl rounded-[var(--radius-card)] border border-stone-200/90 bg-white/95 shadow-sm backdrop-blur-md">
         <div className="flex h-16 items-center gap-3 px-4 sm:px-5">
           <Link href="/app" className="flex shrink-0 items-center gap-2">
-            <HorseIcon />
             <span className="text-lg font-semibold tracking-tight text-stone-900">
               Course Horse
             </span>
@@ -79,15 +70,20 @@ export function AppHeader() {
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <Button size="md" onClick={() => setHorseyOpen(true)} className="hidden sm:inline-flex">
-              Ask Horsey
+            <Button
+              size="md"
+              onClick={() => setHorseyOpen(true)}
+              className="hidden sm:inline-flex bg-yellow-400 text-yellow-950 shadow-[0_0_0_2px_rgba(253,224,71,0.45),0_6px_14px_rgba(202,138,4,0.25)] hover:bg-yellow-300"
+            >
+              Ask Horsey AI
             </Button>
-            <Button size="sm" onClick={() => setHorseyOpen(true)} className="sm:hidden">
-              Horsey
+            <Button
+              size="sm"
+              onClick={() => setHorseyOpen(true)}
+              className="sm:hidden bg-yellow-400 text-yellow-950 shadow-[0_0_0_2px_rgba(253,224,71,0.45)] hover:bg-yellow-300"
+            >
+              Ask AI
             </Button>
-            <div className="hidden h-8 w-8 items-center justify-center rounded-full bg-stone-100 text-xs font-medium text-stone-600 md:flex">
-              ?
-            </div>
             <button
               type="button"
               className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 md:hidden"

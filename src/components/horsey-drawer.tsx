@@ -15,7 +15,7 @@ const INTRO_MESSAGE: Msg = {
 
 const SUGGESTED = [
   "Build the prereq graph for CMPSC 132",
-  "Build me a schedule for CMPSC",
+  "Build me an academic plan for CMPSC",
   "What if I drop Calculus III?",
 ];
 
@@ -126,7 +126,7 @@ export function HorseyDrawer() {
         setTimeout(() => { router.push("/app/graph"); setHorseyOpen(false); }, 600);
       } else if (hasPlan) {
         setPlanPayload(data.planAction!);
-        const suffix = "\n\n*Schedule built — opening your plan now.*";
+        const suffix = "\n\n*Academic plan built — opening your plan now.*";
         setMessages((m) => [...m, { role: "assistant", content: replyContent + suffix }]);
         setTimeout(() => { router.push("/app/plan"); setHorseyOpen(false); }, 600);
       } else {

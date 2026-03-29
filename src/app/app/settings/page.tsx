@@ -85,7 +85,7 @@ export default function SettingsPage() {
         />
         <Toggle
           label="Weekly plan digest"
-          description="Email summary of your schedule (later)"
+          description="Email summary of your academic plan (later)"
           checked={settings.weeklyDigest}
           onChange={(v) => persist({ ...settings, weeklyDigest: v })}
         />
@@ -99,7 +99,7 @@ export default function SettingsPage() {
           </svg>
           <div className="flex-1">
             <p className="text-sm font-medium text-stone-800">Export data</p>
-            <p className="text-xs text-stone-500">Schedule, saved plan, and settings as JSON</p>
+            <p className="text-xs text-stone-500">Academic plan preferences, saved plan, and settings as JSON</p>
           </div>
           <Button variant="secondary" size="sm" onClick={exportPrefs}>
             {exported ? "Done" : "Export"}

@@ -1,43 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ScheduleVariant } from "@/types/schedule";
 import { Card, Button, Input } from "@/components/ui";
 import { DegreeProgress } from "@/components/degree-progress";
 
 const PREFS_KEY = "coursehorse.schedulePrefs";
 
 type Prefs = {
-  school: string;
   majors: string;
-  gradDate: string;
 };
 
-const defaultPrefs: Prefs = { school: "", majors: "", gradDate: "" };
+const defaultPrefs: Prefs = { majors: "" };
 
 type Props = {
-  scheduleVariant: ScheduleVariant;
-  onScheduleVariantChange: (v: ScheduleVariant) => void;
-  onSaveExperimentalAsSaved: () => void;
-  onClearSavedOverride: () => void;
-  onRegenerateExperimental: () => void;
-  onPrefsChanged?: () => void;
-  hasSavedOverride: boolean;
+  onBuildWithHorsey: (major: string) => Promise<void>;
+  onSaveAcademicPlan: () => void;
+  onClearAcademicPlan: () => void;
+  canSave: boolean;
+  hasAnyPlan: boolean;
   totalCredits: number;
 };
 
 export function ScheduleOptionsPanel({
-  scheduleVariant,
-  onScheduleVariantChange,
-  onSaveExperimentalAsSaved,
-  onClearSavedOverride,
-  onRegenerateExperimental,
-  onPrefsChanged,
-  hasSavedOverride,
+  onBuildWithHorsey,
+  onSaveAcademicPlan,
+  onClearAcademicPlan,
+  canSave,
+  hasAnyPlan,
   totalCredits,
 }: Props) {
   const [prefs, setPrefs] = useState<Prefs>(defaultPrefs);
-  const [savedMsg, setSavedMsg] = useState(false);
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -53,9 +47,24 @@ export function ScheduleOptionsPanel({
     setPrefs(next);
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify(next));
-      setSavedMsg(true);
-      window.setTimeout(() => setSavedMsg(false), 2000);
     } catch { /* ignore */ }
+  }
+
+  async function handleBuild() {
+    const major = prefs.majors.trim();
+    if (!major) {
+      setError("Enter your major first (e.g. Computer Science).");
+      return;
+    }
+    setError(null);
+    setIsBuilding(true);
+    try {
+      await onBuildWithHorsey(major);
+    } catch {
+      setError("Could not build academic plan right now. Try again.");
+    } finally {
+      setIsBuilding(false);
+    }
   }
 
   return (
@@ -66,87 +75,42 @@ export function ScheduleOptionsPanel({
         </Card>
 
         <Card>
-          <h2 className="text-sm font-semibold text-stone-900">Schedule options</h2>
+          <h2 className="text-sm font-semibold text-stone-900">Build with Horsey</h2>
           <p className="mt-0.5 text-xs text-stone-500">
-            Stored on this device for now.
+            Enter your major and let Horsey generate your academic plan.
           </p>
           <div className="mt-4 space-y-3">
             <Input
-              id="school"
-              label="School"
-              value={prefs.school}
-              onChange={(e) => persist({ ...prefs, school: e.target.value })}
-              placeholder="e.g. State University"
-            />
-            <Input
               id="majors"
-              label="Major(s)"
+              label="Major"
               value={prefs.majors}
               onChange={(e) => persist({ ...prefs, majors: e.target.value })}
-              onBlur={() => onPrefsChanged?.()}
-              placeholder="e.g. CMPSC, Computer Science"
-            />
-            <Input
-              id="grad"
-              label="Expected graduation"
-              type="date"
-              value={prefs.gradDate}
-              onChange={(e) => persist({ ...prefs, gradDate: e.target.value })}
-              hint="mm/dd/yyyy"
+              placeholder="e.g. Computer Science (CMPSC)"
             />
           </div>
 
           <div className="mt-5 border-t border-stone-100 pt-4">
-            <p className="text-xs font-medium text-stone-700">Active schedule</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => onScheduleVariantChange("saved")}
-                className={`rounded-[var(--radius-button)] px-3 py-2 text-sm font-medium transition ${
-                  scheduleVariant === "saved"
-                    ? "bg-amber-100 text-amber-950 ring-1 ring-amber-300"
-                    : "bg-stone-50 text-stone-700 ring-1 ring-stone-200 hover:bg-stone-100"
-                }`}
-              >
-                Saved
-              </button>
-              <button
-                type="button"
-                onClick={() => onScheduleVariantChange("experimental")}
-                className={`rounded-[var(--radius-button)] px-3 py-2 text-sm font-medium transition ${
-                  scheduleVariant === "experimental"
-                    ? "bg-sky-100 text-sky-950 ring-1 ring-sky-300"
-                    : "bg-stone-50 text-stone-700 ring-1 ring-stone-200 hover:bg-stone-100"
-                }`}
-              >
-                Experimental
-              </button>
-            </div>
-            <div className="mt-2 text-[11px] leading-relaxed text-stone-500">
-              {scheduleVariant === "saved"
-                ? "Your locked-in plan."
-                : "Generated by the optimizer — explore without saving."}
-            </div>
-            {scheduleVariant === "experimental" ? (
-              <div className="mt-3 space-y-2">
-                <Button className="w-full" onClick={onSaveExperimentalAsSaved}>
-                  Save as my plan
-                </Button>
-                <Button variant="secondary" className="w-full" size="sm" onClick={onRegenerateExperimental}>
-                  Regenerate
-                </Button>
-              </div>
-            ) : null}
-            {hasSavedOverride ? (
-              <Button variant="ghost" className="mt-2 w-full" size="sm" onClick={onClearSavedOverride}>
-                Revert to default
+            <Button
+              className="w-full bg-yellow-400 text-yellow-950 shadow-[0_0_0_2px_rgba(253,224,71,0.45),0_8px_20px_rgba(202,138,4,0.25)] hover:bg-yellow-300"
+              onClick={handleBuild}
+              disabled={isBuilding}
+            >
+              {isBuilding ? "Building academic plan..." : "Ask Horsey to Build Academic Plan"}
+            </Button>
+            <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
+              Horsey uses your major and catalog context to generate the plan.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant="secondary" size="sm" onClick={onSaveAcademicPlan} disabled={!canSave}>
+                Save plan
               </Button>
-            ) : null}
+              <Button variant="ghost" size="sm" onClick={onClearAcademicPlan} disabled={!hasAnyPlan}>
+                Clear plan
+              </Button>
+            </div>
           </div>
 
-          {savedMsg ? (
-            <p className="mt-3 text-center text-xs text-emerald-700">Options saved.</p>
-          ) : null}
+          {error ? <p className="mt-3 text-center text-xs text-red-700">{error}</p> : null}
         </Card>
       </div>
     </aside>
