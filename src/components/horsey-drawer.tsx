@@ -74,6 +74,9 @@ export function HorseyDrawer() {
     }
   }, [messages, pending]);
 
+// In src/components/horsey-drawer.tsx
+// Replace the send function with this version that handles schedule responses:
+
   const send = useCallback(async (text?: string) => {
     const t = (text ?? input).trim();
     if (!t || pending) return;
@@ -83,13 +86,30 @@ export function HorseyDrawer() {
     setMessages(next);
     setPending(true);
     try {
+      // Pass onboarding data in headers for schedule generation
+      const stored = localStorage.getItem("coursehorse.onboarding.v1") || "{}";
+
       const res = await fetch("/api/horsey/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-onboarding": stored,
+        },
         body: JSON.stringify({ messages: next, context: horseyContext }),
       });
       if (!res.ok) throw new Error("Network error");
-      const data = (await res.json()) as { content?: string };
+      const data = (await res.json()) as { content?: string; scheduleGenerated?: boolean; plan?: unknown };
+
+      // If Horsey generated a schedule, save it to localStorage for the plan page
+      if (data.scheduleGenerated && data.plan) {
+        localStorage.setItem("coursehorse.horseySchedule", JSON.stringify(data.plan));
+        // Trigger storage event for plan page to pick up
+        window.dispatchEvent(new StorageEvent("storage", {
+          key: "coursehorse.horseySchedule",
+          newValue: JSON.stringify(data.plan),
+        }));
+      }
+
       setMessages((m) => [...m, { role: "assistant", content: data.content ?? "No reply." }]);
     } catch {
       setMessages((m) => [...m, { role: "assistant", content: "Something went wrong. Try again.", error: true }]);

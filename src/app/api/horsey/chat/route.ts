@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { MongoClient } from "mongodb";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { isScheduleRequest, parseMajorsFromQuery } from "@/lib/schedule_generator";
 
 const MONGO_URI = process.env.MONGO_URI!;
 const GEMINI_KEY = process.env.GEMINI_API_KEY!;
@@ -41,22 +42,59 @@ async function buildContext(query: string): Promise<string> {
       );
     }
   }
+  // Search text_content directly with query keywords
+  const words = query.toLowerCase()
+    .replace(/[^a-z\s]/g, "")
+    .split(" ")
+    .filter(w => w.length > 4 && !["about", "whats", "where", "their", "there", "would", "could", "should", "when", "what", "have", "does"].includes(w));
 
-  // General PSU pages full-text search
-  try {
-    const pages = await c.db("degreeflow").collection("psu_pages")
-      .find({ $text: { $search: query }, status: "success" },
-        { projection: { score: { $meta: "textScore" }, title: 1, text_content: 1, url: 1, emails: 1, phones: 1 } })
-      .sort({ score: { $meta: "textScore" } }).limit(3).toArray();
-    for (const p of pages) {
+  if (words.length > 0) {
+    const contentPages = await c.db("degreeflow").collection("psu_pages")
+      .find({
+        status: "success",
+        $and: words.slice(0, 3).map(w => ({ text_content: { $regex: w, $options: "i" } }))
+      },
+      { projection: { title: 1, text_content: 1, url: 1, emails: 1, phones: 1 } })
+      .limit(3).toArray();
+    for (const p of contentPages) {
+      const rawText = (p.text_content as string || "");
+      const sentences = [...new Set(rawText.split(". "))];
+      const cleanText = sentences.join(". ").slice(0, 800);
       parts.push(
-        `PAGE: ${p.title as string}\nURL: ${p.url as string}\n` +
-        `${(p.text_content as string || "").slice(0, 500)}\n` +
-        `${(p.emails as string[])?.[0] ? "Email: " + (p.emails as string[])[0] : ""}` +
-        `${(p.phones as string[])?.[0] ? " | Phone: " + (p.phones as string[])[0] : ""}`
+        `PAGE: ${p.title as string}\nURL: ${p.url as string}\n${cleanText}`
       );
     }
-  } catch { /* text index may not exist */ }
+  }
+
+  // General PSU pages full-text search
+  const pages = await c.db("degreeflow").collection("psu_pages")
+    .find({ $text: { $search: query }, status: "success" },
+      { projection: { 
+        score: { $meta: "textScore" }, 
+        title: 1, 
+        text_content: 1, 
+        headings: 1,
+        url: 1, 
+        emails: 1, 
+        phones: 1 
+      }})
+    .sort({ score: { $meta: "textScore" } }).limit(5).toArray();
+
+  for (const p of pages) {
+    // Deduplicate text content before sending to Gemini
+    const rawText = (p.text_content as string || "");
+    const sentences = [...new Set(rawText.split(". "))];
+    const cleanText = sentences.join(". ").slice(0, 800);
+    const headings = (p.headings as string[] || []).join(" | ");
+    
+    parts.push(
+      `PAGE: ${p.title as string}\nURL: ${p.url as string}\n` +
+      `HEADINGS: ${headings}\n` +
+      `CONTENT: ${cleanText}\n` +
+      `${(p.emails as string[])?.[0] ? "Email: " + (p.emails as string[])[0] : ""}` +
+      `${(p.phones as string[])?.[0] ? " | Phone: " + (p.phones as string[])[0] : ""}`
+    );
+  }
 
   // Course full-text search (when no exact code)
   if (!codeMatch) {
@@ -75,6 +113,23 @@ async function buildContext(query: string): Promise<string> {
       }
     } catch { /* text index may not exist */ }
   }
+  if (parts.length === 0) {
+    const keywords = query.toLowerCase().split(" ").filter(w => w.length > 3);
+    const regexes = keywords.map(k => new RegExp(k, "i"));
+    const fallback = await c.db("degreeflow").collection("psu_pages")
+      .find({
+        status: "success",
+        $or: regexes.map(r => ({ text_content: { $regex: r } }))
+      },
+      { projection: { title: 1, text_content: 1, url: 1 } })
+      .limit(3).toArray();
+    for (const p of fallback) {
+      parts.push(
+        `PAGE: ${p.title as string}\nURL: ${p.url as string}\n` +
+        `${(p.text_content as string || "").slice(0, 600)}`
+      );
+    }
+  }
 
   return parts.join("\n\n---\n\n") || "No specific results found.";
 }
@@ -85,7 +140,39 @@ export async function POST(request: Request) {
     const messages: Msg[] = body.messages || [];
     const ctx = body.context;
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
-
+     if (isScheduleRequest(lastUser.content)) {
+      const stored = request.headers.get("x-onboarding") || "{}";
+      let onboarding: { major?: string; completedCourseIds?: string[]; constraints?: { maxCreditsPerSemester?: number } } = {};
+      try { onboarding = JSON.parse(stored); } catch { /* ignore */ }
+ 
+      const majors = parseMajorsFromQuery(lastUser.content);
+      if (majors.length === 0 && onboarding.major) majors.push(onboarding.major);
+ 
+      if (majors.length > 0) {
+        const schedRes = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/schedule`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            majors,
+            completedCodes: onboarding.completedCourseIds || [],
+            maxCreditsPerSemester: onboarding.constraints?.maxCreditsPerSemester || 18,
+          }),
+        });
+        const schedData = await schedRes.json() as { summary?: string; totalCourses?: number; totalCredits?: number; warnings?: string[]; plan?: { semesters: unknown[] } };
+ 
+        const semCount = schedData.plan?.semesters?.length ?? 0;
+        const warningText = schedData.warnings?.length
+          ? `\n\n⚠️ Note: ${schedData.warnings.join(" ")}`
+          : "";
+ 
+        return NextResponse.json({
+          role: "assistant" as const,
+          content: `📅 **Schedule generated for ${majors.join(" + ")}!**\n\n${schedData.summary}\n\nYour plan has been loaded into the Schedule tab — check it out there to see all ${semCount} semesters laid out. You can switch between your saved plan and this new one using the panel on the left.${warningText}`,
+          scheduleGenerated: true,
+          plan: schedData.plan,
+        });
+      }
+    }
     if (!lastUser) {
       return NextResponse.json({
         role: "assistant" as const,
@@ -115,15 +202,19 @@ ${history ? `CONVERSATION:\n${history}\n` : ""}Student: ${lastUser.content}
 Horsey:`;
 
     const genai = new GoogleGenerativeAI(GEMINI_KEY);
-    const model = genai.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
     const result = await model.generateContent(prompt);
 
     return NextResponse.json({ role: "assistant" as const, content: result.response.text() });
-  } catch (err) {
-    console.error("[Horsey] Error:", err);
-    return NextResponse.json(
-      { role: "assistant" as const, content: "Sorry, I'm having trouble right now. Please try again!" },
-      { status: 500 }
-    );
-  }
+  } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("Too Many Requests");
+      console.error("[Horsey] Error:", err);
+      return NextResponse.json({
+        role: "assistant" as const,
+        content: isQuota
+          ? "I've hit my daily AI quota limit. Please try again tomorrow or contact the admin to upgrade the API plan!"
+          : "Sorry, something went wrong. Please try again.",
+      });
+    }
 }
