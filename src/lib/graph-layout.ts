@@ -1,7 +1,7 @@
 import dagre from "dagre";
 import type { Edge, Node } from "@xyflow/react";
 
-const NODE_W = 200;
+const NODE_W = 176;
 const NODE_H = 56;
 
 export function layoutWithDagre(
@@ -11,7 +11,7 @@ export function layoutWithDagre(
 ): Node[] {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: direction, nodesep: 48, ranksep: 72, marginx: 24, marginy: 24 });
+  g.setGraph({ rankdir: direction, nodesep: 28, ranksep: 64, marginx: 20, marginy: 20 });
 
   nodes.forEach((n) => {
     g.setNode(n.id, { width: NODE_W, height: NODE_H });

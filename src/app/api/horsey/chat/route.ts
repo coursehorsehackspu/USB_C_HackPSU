@@ -3,11 +3,14 @@ import { NextResponse } from "next/server";
 import { MongoClient } from "mongodb";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MONGO_URI = process.env.MONGO_URI!;
-const GEMINI_KEY = process.env.GEMINI_API_KEY!;
+const MONGO_URI = process.env.MONGO_URI;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 let client: MongoClient | null = null;
 async function db() {
+  if (!MONGO_URI) {
+    throw new Error("Missing MONGO_URI");
+  }
   if (!client) { client = new MongoClient(MONGO_URI); await client.connect(); }
   return client;
 }
@@ -19,8 +22,14 @@ type Body = {
 };
 
 async function buildContext(query: string): Promise<string> {
-  const c = await db();
   const parts: string[] = [];
+  let c: MongoClient;
+
+  try {
+    c = await db();
+  } catch {
+    return "Course database is currently unavailable.";
+  }
 
   // Exact course code lookup
   const codeMatch = query.toUpperCase().match(/\b([A-Z]{2,6})\s*(\d{3}[A-Z]?)\b/);
@@ -79,6 +88,45 @@ async function buildContext(query: string): Promise<string> {
   return parts.join("\n\n---\n\n") || "No specific results found.";
 }
 
+function buildFallbackReply(
+  question: string,
+  ctx: Body["context"],
+  context: string,
+  reason?: string,
+): string {
+  const hints: string[] = [];
+
+  if (ctx?.selectedCourse?.code) {
+    hints.push(`I can at least see you're looking at **${ctx.selectedCourse.code}** right now.`);
+  } else if (ctx?.view) {
+    hints.push(`I can see you're on the **${ctx.view}** page.`);
+  }
+
+  if (context && context !== "No specific results found." && context !== "Course database is currently unavailable.") {
+    hints.push(`Here’s the local context I found:\n${context}`);
+  } else if (context === "Course database is currently unavailable.") {
+    hints.push("The course database connection is unavailable at the moment.");
+  }
+
+  hints.push(
+    "I couldn't reach the full Horsey AI service just now, so I may be missing live schedule or advising details.",
+  );
+
+  if (/why|how come|reason/i.test(question)) {
+    hints.push(
+      "If you're asking why a course appears in a specific term, the most common reasons are prerequisite sequencing, term availability, or a saved planning override.",
+    );
+  }
+
+  hints.push("Try asking again in a moment, or ask about a specific course code and I’ll use whatever local data is available.");
+
+  if (reason) {
+    hints.push(`Debug hint: ${reason}.`);
+  }
+
+  return hints.join("\n\n");
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Body;
@@ -114,16 +162,34 @@ ${context}
 ${history ? `CONVERSATION:\n${history}\n` : ""}Student: ${lastUser.content}
 Horsey:`;
 
-    const genai = new GoogleGenerativeAI(GEMINI_KEY);
-    const model = genai.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-    const result = await model.generateContent(prompt);
+    if (!GEMINI_KEY) {
+      return NextResponse.json({
+        role: "assistant" as const,
+        content: buildFallbackReply(lastUser.content, ctx, context, "Missing GEMINI_API_KEY"),
+      });
+    }
 
-    return NextResponse.json({ role: "assistant" as const, content: result.response.text() });
+    try {
+      const genai = new GoogleGenerativeAI(GEMINI_KEY);
+      const model = genai.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+      const result = await model.generateContent(prompt);
+
+      return NextResponse.json({ role: "assistant" as const, content: result.response.text() });
+    } catch (err) {
+      console.error("[Horsey] Model error:", err);
+      return NextResponse.json({
+        role: "assistant" as const,
+        content: buildFallbackReply(lastUser.content, ctx, context, "Model request failed"),
+      });
+    }
   } catch (err) {
     console.error("[Horsey] Error:", err);
     return NextResponse.json(
-      { role: "assistant" as const, content: "Sorry, I'm having trouble right now. Please try again!" },
-      { status: 500 }
+      {
+        role: "assistant" as const,
+        content:
+          "I ran into an unexpected Horsey error while preparing your answer. Please try again in a moment.",
+      },
     );
   }
 }
