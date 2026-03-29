@@ -21,11 +21,14 @@ import {
   type CourseDoc as PlanCourseDoc,
 } from "@/lib/schedule-plan";
 
-const MONGO_URI = process.env.MONGO_URI!;
-const GEMINI_KEY = process.env.GEMINI_API_KEY!;
+const MONGO_URI = process.env.MONGO_URI;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 let client: MongoClient | null = null;
 async function db() {
+  if (!MONGO_URI) {
+    throw new Error("Missing MONGO_URI");
+  }
   if (!client) { client = new MongoClient(MONGO_URI); await client.connect(); }
   return client;
 }
@@ -112,8 +115,14 @@ function extractCourseCodeFromContext(context: string): string | null {
 /* ------------------------------------------------------------------ */
 
 async function buildContext(query: string): Promise<string> {
-  const c = await db();
   const parts: string[] = [];
+  let c: MongoClient;
+
+  try {
+    c = await db();
+  } catch {
+    return "Course database is currently unavailable.";
+  }
 
   const codeMatch = query.toUpperCase().match(COURSE_CODE_RE);
   if (codeMatch) {
@@ -580,15 +589,21 @@ ${context}
 ${history ? `CONVERSATION:\n${history}\n` : ""}Student: ${lastUser.content}
 Horsey:`;
 
+    if (!GEMINI_KEY) {
+      return NextResponse.json({
+        role: "assistant" as const,
+        content: "Horsey is not configured yet (missing GEMINI_API_KEY).",
+      });
+    }
+
     const genai = new GoogleGenerativeAI(GEMINI_KEY);
     const model = genai.getGenerativeModel({ model: "gemini-2.5-flash" });
     const result = await model.generateContent(prompt);
     const raw = result.response.text();
 
-    let { cleaned, graphAction, planAction } = parseActions(raw);
-
-    graphAction = correctAction(graphAction, lastUser.content, context);
-    planAction = correctAction(planAction, lastUser.content, context);
+    const { cleaned, graphAction: parsedGraph, planAction: parsedPlan } = parseActions(raw);
+    const graphAction = correctAction(parsedGraph, lastUser.content, context);
+    const planAction = correctAction(parsedPlan, lastUser.content, context);
 
     const response: Record<string, unknown> = {
       role: "assistant",
@@ -600,16 +615,19 @@ Horsey:`;
     }
 
     if (planAction) {
-      const maxCredits = planAction.maxCredits ?? 18;
-      response.planAction = await buildSchedulePlan(planAction, [], maxCredits, relevantSubjects);
+      const resolvedMaxCredits = planAction.maxCredits ?? 18;
+      response.planAction = await buildSchedulePlan(planAction, [], resolvedMaxCredits, relevantSubjects);
     }
 
     return NextResponse.json(response);
   } catch (err) {
     console.error("[Horsey] Error:", err);
     return NextResponse.json(
-      { role: "assistant" as const, content: "Sorry, I'm having trouble right now. Please try again!" },
-      { status: 500 }
+      {
+        role: "assistant" as const,
+        content:
+          "I ran into an unexpected Horsey error while preparing your answer. Please try again in a moment.",
+      },
     );
   }
 }

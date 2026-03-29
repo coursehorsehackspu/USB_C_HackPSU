@@ -60,6 +60,7 @@ function FitViewOnChange({
 }) {
   const { fitView } = useReactFlow();
   const prevKey = useRef(payloadKey);
+  const lastFocusedId = useRef<string | null>(null);
 
   useEffect(() => {
     if (prevKey.current !== payloadKey) {
@@ -73,6 +74,9 @@ function FitViewOnChange({
 
   useEffect(() => {
     if (!focusId || !nodeIds.includes(focusId)) return;
+    if (lastFocusedId.current === focusId) return;
+
+    lastFocusedId.current = focusId;
     const id = window.requestAnimationFrame(() => {
       fitView({ nodes: [{ id: focusId }], duration: 400, padding: 0.28 });
     });
@@ -170,6 +174,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
 
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const setHorseyContext = useUiStore((s) => s.setHorseyContext);
@@ -219,17 +224,22 @@ function GraphInner({ focusId }: { focusId: string | null }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (descriptionOpen) {
+          setDescriptionOpen(false);
+          return;
+        }
         setSelectedId(null);
         setHorseyContext({ selectedCourse: undefined });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setHorseyContext]);
+  }, [descriptionOpen, setHorseyContext]);
 
   useEffect(() => {
     if (!focusId || !payload?.nodes.some((n) => n.id === focusId)) return;
     queueMicrotask(() => {
+      setDescriptionOpen(false);
       setSelectedId(focusId);
       setHorseyContext({
         view: "graph",
@@ -257,6 +267,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      setDescriptionOpen(false);
       setSelectedId(node.id);
       const d = node.data as CourseGraphNode;
       setHorseyContext({ selectedCourse: { id: d.id, code: d.code }, view: "graph" });
@@ -265,6 +276,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
   );
 
   const onPaneClick = useCallback(() => {
+    setDescriptionOpen(false);
     setSelectedId(null);
     setHorseyContext({ selectedCourse: undefined });
   }, [setHorseyContext]);
@@ -274,6 +286,9 @@ function GraphInner({ focusId }: { focusId: string | null }) {
   const selected = payload.nodes.find((n) => n.id === selectedId);
   const nodeIds = payload.nodes.map((n) => n.id);
   const payloadKey = payload.nodes.map((n) => n.id).sort().join(",");
+  const previewDescription = selected?.description
+    ? selected?.description?.slice(0, 170).trimEnd()
+    : undefined;
 
   return (
     <div className="relative h-[min(70vh,640px)] w-full rounded-xl border border-stone-200 bg-stone-50">
@@ -309,6 +324,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
         <SearchPanel
           courses={payload.nodes}
           onPick={(c) => {
+            setDescriptionOpen(false);
             setSelectedId(c.id);
             setHorseyContext({ selectedCourse: { id: c.id, code: c.code }, view: "graph" });
           }}
@@ -332,7 +348,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
 
       {selected ? (
         <div className="pointer-events-none absolute bottom-4 left-4 right-4 max-w-md sm:pointer-events-auto">
-          <div className="pointer-events-auto rounded-xl border border-stone-200 bg-white p-4 shadow-lg">
+          <div className="pointer-events-auto relative rounded-xl border border-stone-200 bg-white p-4 shadow-lg">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-stone-900">
@@ -344,6 +360,7 @@ function GraphInner({ focusId }: { focusId: string | null }) {
                 type="button"
                 className="text-xs text-stone-500 hover:text-stone-800"
                 onClick={() => {
+                  setDescriptionOpen(false);
                   setSelectedId(null);
                   setHorseyContext({ selectedCourse: undefined });
                 }}
@@ -353,7 +370,8 @@ function GraphInner({ focusId }: { focusId: string | null }) {
             </div>
             {selected.description ? (
               <p className="mt-2 text-xs leading-relaxed text-stone-600">
-                {selected.description}
+                {previewDescription}
+                {selected.description.length > 170 ? "..." : ""}
               </p>
             ) : null}
             {selected.skills?.length ? (
@@ -368,13 +386,49 @@ function GraphInner({ focusId }: { focusId: string | null }) {
                 ))}
               </div>
             ) : null}
-            <button
-              type="button"
-              className="mt-3 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-amber-950 hover:bg-amber-400"
-              onClick={() => setHorseyOpen(true)}
-            >
-              Ask Horsey about this course
-            </button>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 hover:bg-amber-100"
+                onClick={() => setHorseyOpen(true)}
+              >
+                Ask Horsey About
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-amber-950 hover:bg-amber-400"
+                onClick={() => setDescriptionOpen(true)}
+              >
+                Full Description
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {descriptionOpen && selected?.description ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-stone-950/25 p-4 backdrop-blur-[2px]">
+          <div className="relative max-h-[min(80vh,640px)] w-full max-w-2xl overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-stone-100 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-stone-900">
+                  {selected.code} full description
+                </h3>
+                <p className="mt-1 text-sm text-stone-500">{selected.title}</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-sm text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+                onClick={() => setDescriptionOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-[calc(min(80vh,640px)-88px)] overflow-y-auto px-5 py-4">
+              <p className="whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                {selected.description}
+              </p>
+            </div>
           </div>
         </div>
       ) : null}

@@ -40,7 +40,7 @@ export async function GET(request: Request) {
         title: (c.title as string) || "",
         credits: (c.credits as number) || 3,
         status: isCompleted ? "completed" : (allDone || prereqs.length === 0 ? "available" : "locked"),
-        description: ((c.description as string) || "").slice(0, 200),
+        description: (c.description as string) || "",
       };
     });
 

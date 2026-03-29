@@ -10,7 +10,7 @@ const nav = [
   { href: "/app", label: "Home", exact: true },
   { href: "/app/plan", label: "Plan" },
   { href: "/app/graph", label: "Graph" },
-  { href: "/app/electives", label: "Electives" },
+  { href: "/app/internships", label: "Internships" },
   { href: "/app/settings", label: "Settings" },
 ];
 

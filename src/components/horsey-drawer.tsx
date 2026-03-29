@@ -8,6 +8,10 @@ import type { CourseGraphPayload } from "@/types/graph";
 import type { DegreePlan } from "@/types/plan";
 
 type Msg = { role: "user" | "assistant"; content: string; error?: boolean };
+const INTRO_MESSAGE: Msg = {
+  role: "assistant",
+  content: "Hey — I'm **Horsey**, your AI academic counselor. Ask me about your plan, prereqs, or registration timing.",
+};
 
 const SUGGESTED = [
   "Build the prereq graph for CMPSC 132",
@@ -53,12 +57,7 @@ export function HorseyDrawer() {
   const setPlanPayload = useUiStore((s) => s.setPlanPayload);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const [messages, setMessages] = useState<Msg[]>([
-    {
-      role: "assistant",
-      content: "Hey — I'm **Horsey**, your AI academic counselor. Ask me about your plan, prereqs, or registration timing.",
-    },
-  ]);
+  const [messages, setMessages] = useState<Msg[]>([INTRO_MESSAGE]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -79,13 +78,19 @@ export function HorseyDrawer() {
     }
   }, [messages, pending]);
 
-  const send = useCallback(async (text?: string) => {
+  const send = useCallback(async (text?: string, options?: { retry?: boolean }) => {
     const t = (text ?? input).trim();
     if (!t || pending) return;
-    const userMsg: Msg = { role: "user", content: t };
     if (!text) setInput("");
-    const next = [...messages, userMsg];
-    setMessages(next);
+
+    const requestMessages: Msg[] = options?.retry
+      ? [
+          ...messages.filter((m, i) => !(i === messages.length - 1 && m.error)),
+          { role: "user" as const, content: t },
+        ]
+      : [...messages, { role: "user" as const, content: t }];
+
+    setMessages(requestMessages);
     setPending(true);
     try {
       let major: string | undefined;
@@ -101,7 +106,7 @@ export function HorseyDrawer() {
       const res = await fetch("/api/horsey/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, context: { ...horseyContext, major } }),
+        body: JSON.stringify({ messages: requestMessages, context: { ...horseyContext, major } }),
       });
       if (!res.ok) throw new Error("Network error");
       const data = (await res.json()) as {
@@ -135,10 +140,7 @@ export function HorseyDrawer() {
   }, [input, pending, messages, horseyContext, setGraphPayload, setPlanPayload, router, setHorseyOpen]);
 
   function clearHistory() {
-    setMessages([{
-      role: "assistant",
-      content: "Cleared! What can I help with?",
-    }]);
+    setMessages([{ role: "assistant", content: "Cleared! What can I help with?" }]);
   }
 
   if (!horseyOpen) return null;
@@ -206,7 +208,7 @@ export function HorseyDrawer() {
                   className="mt-1 block text-xs font-medium text-red-600 underline"
                   onClick={() => {
                     const last = messages.filter((x) => x.role === "user").pop();
-                    if (last) void send(last.content);
+                    if (last) void send(last.content, { retry: true });
                   }}
                 >
                   Retry

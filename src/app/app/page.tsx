@@ -47,7 +47,7 @@ export default function AppHomePage() {
           </h1>
           <p className="mt-4 max-w-lg text-base leading-relaxed text-stone-600">
             See your optimized schedule, explore prereqs on an interactive map,
-            and ask Horsey when something doesn't make sense. Built for students
+            and ask Horsey when something doesn&apos;t make sense. Built for students
             who want a plan, not a PDF buried on a registrar site.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
