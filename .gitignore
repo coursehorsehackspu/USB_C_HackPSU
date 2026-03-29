@@ -1,0 +1,43 @@
+# Python virtual environment
+venv/
+.venv/
+env/
+.env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Logs
+scraper.log
+course_scraper.log
+*.log
+
+# Environment variables (never commit secrets!)
+.env
+.env.local
+.env.*.local
+
+# MongoDB data directory (if running locally)
+data/
+db/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter notebooks (if you experiment later)
+.ipynb_checkpoints/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
