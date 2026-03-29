@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 import google.generativeai as genai
 
+
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI")
@@ -148,7 +149,7 @@ class xCounselorAgent:
                 role = "Student" if msg["role"] == "user" else "DegreeFlow"
                 history_text += f"{role}: {msg['content']}\n"
 
-        prompt = f"""You are DegreeFlow, an AI academic counselor for Penn State University students.
+        prompt = f"""You are CourseHorse, an AI academic counselor for Penn State University students.
                     You have access to PSU's course catalog, degree programs, policies, and general university information.
 
                     Answer the student's question using the context below. Be helpful, specific, and concise.
