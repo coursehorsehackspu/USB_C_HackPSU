@@ -1,0 +1,72 @@
+import type { CourseGraphPayload } from "@/types/graph";
+
+export const mockCourseGraph: CourseGraphPayload = {
+  nodes: [
+    {
+      id: "cs-101",
+      code: "CS 101",
+      title: "Intro to Programming",
+      credits: 4,
+      status: "completed",
+      skills: ["Python", "Problem decomposition"],
+      description: "Foundational programming and basic algorithms.",
+    },
+    {
+      id: "math-151",
+      code: "MATH 151",
+      title: "Calculus I",
+      credits: 4,
+      status: "completed",
+      skills: ["Limits", "Derivatives"],
+    },
+    {
+      id: "cs-201",
+      code: "CS 201",
+      title: "Data Structures",
+      credits: 4,
+      status: "available",
+      skills: ["Big-O", "Trees", "Hashing"],
+      description: "Core structures and complexity.",
+    },
+    {
+      id: "math-241",
+      code: "MATH 241",
+      title: "Calculus III",
+      credits: 4,
+      status: "available",
+      skills: ["Multivariable calculus"],
+    },
+    {
+      id: "cs-301",
+      code: "CS 301",
+      title: "Algorithms",
+      credits: 3,
+      status: "locked",
+      skills: ["Graph algorithms", "DP", "Greedy"],
+    },
+    {
+      id: "cs-340",
+      code: "CS 340",
+      title: "Databases",
+      credits: 3,
+      status: "locked",
+      skills: ["SQL", "Transactions", "Indexing"],
+    },
+    {
+      id: "cs-447",
+      code: "CS 447",
+      title: "Intro to ML",
+      credits: 3,
+      status: "locked",
+      skills: ["Linear models", "Evaluation"],
+    },
+  ],
+  edges: [
+    { id: "e1", source: "cs-101", target: "cs-201", label: "prereq" },
+    { id: "e2", source: "math-151", target: "cs-201", label: "coreq" },
+    { id: "e3", source: "cs-201", target: "cs-301", label: "prereq" },
+    { id: "e4", source: "cs-201", target: "cs-340", label: "prereq" },
+    { id: "e5", source: "math-241", target: "cs-447", label: "prereq" },
+    { id: "e6", source: "cs-301", target: "cs-447", label: "prereq" },
+  ],
+};
